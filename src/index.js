@@ -63,6 +63,8 @@ function createClient() {
         intents: [
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildVoiceStates,
+            GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.MessageContent,
         ],
     });
 
