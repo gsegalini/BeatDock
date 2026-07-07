@@ -1,10 +1,11 @@
 {
   "name": "beatdock",
-  "version": "2.8.0",
+  "version": "2.9.1",
   "description": "A modern and efficient Discord music bot with slash commands, multi-language support, and Docker deployment.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "test": "node scripts/test-autoplay.js",
     "docker:build": "docker build -t beatdock:latest .",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
@@ -26,12 +27,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lazaroagomez/BeatDock.git"
+    "url": "https://github.com/albertgmz/BeatDock.git"
   },
   "bugs": {
-    "url": "https://github.com/lazaroagomez/BeatDock/issues"
+    "url": "https://github.com/albertgmz/BeatDock/issues"
   },
-  "homepage": "https://github.com/lazaroagomez/BeatDock#readme",
+  "homepage": "https://github.com/albertgmz/BeatDock#readme",
   "engines": {
     "node": ">=22.16.0",
     "npm": ">=11.4.2"
