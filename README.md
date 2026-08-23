@@ -81,8 +81,6 @@ services:
   lavalink:
     container_name: beatdock-lavalink
     image: ghcr.io/lavalink-devs/lavalink:4
-    ports:
-      - "2333:2333"
     networks:
       - beatdock-network
     volumes:
@@ -98,6 +96,39 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  # Mints the YouTube poToken on your own IP (credential-free). See "YouTube poToken auto-refresh".
+  bgutil-provider:
+    container_name: beatdock-bgutil
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.2
+    init: true
+    networks:
+      - beatdock-network
+
+  # Pushes a fresh poToken to Lavalink's POST /youtube hot-swap route on a loop.
+  pot-refresher:
+    container_name: beatdock-pot-refresher
+    image: alpine:3
+    init: true
+    depends_on:
+      lavalink:
+        condition: service_healthy
+      bgutil-provider:
+        condition: service_started
+    networks:
+      - beatdock-network
+    volumes:
+      # Long syntax: fail loudly if the script is missing instead of creating a junk dir.
+      - type: bind
+        source: ./scripts/pot-refresher.sh
+        target: /pot-refresher.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      - LAVALINK_PASSWORD=${LAVALINK_PASSWORD:-youshallnotpass}
+      - POT_REFRESH_INTERVAL=${POT_REFRESH_INTERVAL:-1800}
+    command: sh -c "apk add --no-cache curl jq >/dev/null && exec sh /pot-refresher.sh"
 
 networks:
   beatdock-network:
@@ -119,13 +150,15 @@ plugins:
     allowDirectPlaylistIds: true
     clients:
       - MUSIC
+      - IOS
       - WEB
+      - WEBEMBEDDED
       - ANDROID_VR
 
 lavalink:
   plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.16.0"
-      snapshot: false
+    - dependency: "dev.lavalink.youtube:youtube-plugin:f45bbb7aebfcbc1c553769e04af6cd43afa8b7c3"
+      snapshot: true
   server:
     password: "${LAVALINK_PASSWORD:youshallnotpass}"
     sources:
@@ -151,11 +184,26 @@ logging:
     lavalink: INFO
 ```
 
-**5. Deploy:**
+**5. Add the poToken refresher script:**
+
+Download [`scripts/pot-refresher.sh`](scripts/pot-refresher.sh) into a `scripts/` folder next to your `docker-compose.yml`. It mints a fresh YouTube poToken and hot-pushes it to Lavalink (see [YouTube poToken auto-refresh](#youtube-potoken-auto-refresh)).
+
+**6. Deploy:**
 
 ```bash
 docker compose up -d
 ```
+
+### YouTube poToken auto-refresh
+
+Playing arbitrary (non-music) videos and autoplay/RD-mix recommendations requires YouTube's `WEB` client, which needs a short-lived **poToken**. BeatDock keeps this fully automated and **credential-free** — no Google account, no API key, no manual pasting:
+
+- **`bgutil-provider`** mints a `{poToken, visitorData}` pair on your server's own IP.
+- **`pot-refresher`** pushes it to Lavalink's `POST /youtube` hot-swap route (no restart) and re-pushes every `POT_REFRESH_INTERVAL` seconds (default `1800`), covering both token expiry and Lavalink restarts.
+
+Music keeps working through the `MUSIC`/`ANDROID_VR` clients even if the refresher is temporarily down. Age-restricted videos may still be unavailable.
+
+> **Note:** this only applies to the **self-hosted** stack. If BeatDock connects to public Lavalink nodes (no `LAVALINK_HOST` set), tokens are managed by each node's operator, so the `bgutil-provider` and `pot-refresher` services are not used and non-music playback depends on the node.
 
 ### Option B: Deploy from Source
 
@@ -177,6 +225,8 @@ docker compose up -d
 ### No Self-Hosted Lavalink Required
 
 BeatDock can run **without a self-hosted Lavalink server**. If `LAVALINK_HOST`, `LAVALINK_PORT`, and `LAVALINK_PASSWORD` are not set, the bot automatically fetches free public Lavalink v4 servers and connects to one. User search queries and track requests are sent to the selected public node. Set `PUBLIC_NODE_HOST_ALLOWLIST` if you only trust specific public Lavalink hosts.
+
+On public nodes the [YouTube poToken auto-refresh](#youtube-potoken-auto-refresh) does not apply: each node manages its own tokens, so whether non-music videos and autoplay mixes play depends on that node's setup.
 
 To use public servers, simply comment out the Lavalink variables in your `.env`:
 
@@ -234,10 +284,53 @@ All configuration is done through the `.env` file. Only `TOKEN` is required.
 docker compose logs -f                              # View logs
 docker compose restart                              # Restart
 docker compose down                                 # Stop
-docker compose pull && docker compose up -d          # Update
+docker compose pull && docker compose up -d --force-recreate   # Update
 ```
 
+`--force-recreate` is required, not optional: `application.yml` is bind-mounted as a single
+file, and Docker binds single files by inode. `docker compose restart` reuses the container,
+and a plain `docker compose up -d` only recreates services whose image or compose config
+changed - so neither picks up an edited `application.yml`, and Lavalink keeps serving the old
+one indefinitely.
+
+On **Portainer**, use **Pull and redeploy** with **Re-pull image and redeploy** enabled; that
+is the only stack action that recreates every container and remounts the bind against the
+freshly cloned repository. If you use GitOps auto-updates, enable **Force redeployment** too,
+otherwise config-only changes will never reach the container.
+
 ## Troubleshooting
+
+### All YouTube tracks fail to play
+
+YouTube periodically blocks the clients Lavalink uses. Check which clients loaded and whether
+they are being blocked:
+
+```bash
+docker compose logs lavalink | grep -i "YouTube source initialised with clients"
+docker compose logs lavalink | grep -iE "AllClientsFailedException|Sign in to confirm|requires login"
+```
+
+If the client list does not match [`application.yml`](application.yml), the container is still
+running an old config - recreate it (see [Managing the Bot](#managing-the-bot)):
+
+```bash
+docker compose up -d --force-recreate lavalink
+```
+
+Note that `MUSIC` initialises under the name `WEB_REMIX`; that is expected, not drift.
+
+To keep the bot usable while waiting on an upstream fix, switch the default source to
+SoundCloud in `.env` and restart the bot:
+
+```env
+DEFAULT_SEARCH_PLATFORM=scsearch
+```
+
+```bash
+docker compose restart bot
+```
+
+Autoplay is YouTube-only and stays idle while SoundCloud is the default source.
 
 ### Audio not working on Raspberry Pi
 
