@@ -4,6 +4,13 @@ All notable changes to BeatDock are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/). This project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Plain-text `ytsearch` requests returning no results after `IOS` became the first YouTube
+  playback client. Search handling is now disabled specifically for `IOS`, allowing the
+  search-capable `WEB` client to process the original request without changing its source.
+
 ## [2.11.0] - 2026-08-21
 
 ### Fixed

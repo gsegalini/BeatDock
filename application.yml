@@ -20,6 +20,11 @@ plugins:
       - WEB            # arbitrary videos + RD mixes (needs poToken, pushed by pot-refresher)
       - WEBEMBEDDED    # embed / age-limited fallback (also uses poToken)
       - ANDROID_VR     # credential-free safety net if the poToken is momentarily unavailable
+    clientOptions:
+      # IOS is first for playback, but its ytsearch response currently parses as empty and
+      # prevents youtube-source from reaching WEB. Keep IOS out of text-search routing.
+      IOS:
+        searching: false
   lavasrc:
     providers:
       - "ytsearch:\"%ISRC%\""
